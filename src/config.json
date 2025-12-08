@@ -2,5 +2,6 @@
     "logger": {
         "directory": "logs",
         "level": "DEBUG"
-    }
+    },
+    "timezone": "Europe/London"
 }

@@ -30,48 +30,8 @@ class Config:
         return self._config.get('logger', {}).get('stderr', False)
     
     @property
-    def search_url(self):
-        return self._config['scraper']['search_url']
-    
-    @property
-    def url_prefix(self):
-        return self._config['scraper']['url_prefix']
-    
-    @property
-    def curl_cffi_impersonate(self):
-        return self._config.get('scraper').get('curl_cffi_impersonate', None)
-    
-    @property
-    def is_random(self) -> bool:
-        return self._config['scraper']['random_delays']
-    
-    @property
-    def request_timeout(self):
-        return self._config['scraper']['request_timeout']
-    
-    @property
-    def db_path(self):
-        return self._config['database']['path']
-    
-    @property
-    def force_resync(self) -> bool:
-        return self._config['scraper']['force_resync']
-    
-    @property
-    def scraper_library(self):
-        return self._config['scraper']['library']
-
-    @property
-    def headless(self) -> bool:
-        return self._config.get('scraper').get('headless', False)
-    
-    @property
-    def chromedriver_path(self):
-        return self._config.get('scraper').get('chromedriver_path', None)
-    
-    @property
-    def car_options(self):
-        return self._config['car_options']
+    def get_timezone(self) -> str:
+        return self._config.get('timezone')
     
 
 config = Config()

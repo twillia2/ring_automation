@@ -124,7 +124,7 @@ async def listen(ring) -> None:
     log.info(f"main::listen: Setting up RingEventListener with credentials [{gcm_cache_file}]...")
 
     event_listener = RingEventListener(ring, credentials, credentials_updated_callback)
-    event_handler = RingEventHandler(ring, LightController(ring, "Drive"))
+    event_handler = RingEventHandler(ring, LightController(ring, "Drive", config.get_timezone))
     
     log.info("main::listen: Starting event_listener...")
     await event_listener.start()
@@ -148,5 +148,5 @@ async def main():
     log.info("main::main: Clean shutdown")
 
 if __name__ == "__main__":
-    config = Config('../config.json')
+    config = Config('src/config.json')
     asyncio.run(main())

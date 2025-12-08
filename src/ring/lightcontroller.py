@@ -3,14 +3,23 @@ logger = logging.getLogger('ring_automation')
 import asyncio
 from typing import cast
 from ring_doorbell import Ring, RingCapability, RingStickUpCam
+from astral import LocationInfo
+from astral.sun import sun
+from datetime import datetime
+import pytz
 
 class LightController:
-    def __init__(self, ring: Ring, device_name):
+    def __init__(self, ring: Ring, device_name, timezone: str):
         self._turn_off_task = None
         self.ring = ring
         self.device_name = device_name
         self.device = ring.get_device_by_name(device_name)
-
+        
+        if not timezone:
+            self.timezone = pytz.timezone("Europe/London")
+        else:
+            self.timezone = pytz.timezone(timezone)
+        
         if not self.device:
             logger.error(f"lightcontroller::init: got unknown device [{device_name}]")
             return None
@@ -20,7 +29,16 @@ class LightController:
         self.floodlight = cast(RingStickUpCam, self.device)
         self.is_on = self.floodlight.light
 
+        # lat/lon for sunset/sunrise times
+        self.location = LocationInfo(latitude=self.device.latitude, longitude=self.device.longitude)
+
+        logger.info(f"lightcontroller::init: is_dark [{self.is_dark()}]")
+
     async def set_lights(self, enable: bool, duration: int) -> None:
+        if not self.is_dark():
+            logger.debug(f"lightcontroller::set_lights: not dark")
+            return None
+        
         # make sure we have the latest status
         await self.ring.async_update_devices()
         if enable and (self._turn_off_task and not self._turn_off_task.done()):
@@ -60,3 +78,15 @@ class LightController:
             await self.set_lights(False, None)
         except asyncio.CancelledError:
             logger.debug(f"lightcontroller::_auto_off: canceling existing off task for new motion")
+
+    def is_dark(self) -> bool:
+        now = datetime.now(self.timezone)
+        s = sun(self.location.observer, date=now.date(), tzinfo=self.timezone)
+        
+        sunrise = s['sunrise']
+        sunset = s['sunset']
+        
+        is_dark = now < sunrise or now > sunset
+        logger.debug(f"lightcontroller::is_dark: now [{now.strftime('%H:%M')}] sunrise [{sunrise.strftime('%H:%M')}] sunset [{sunset.strftime('%H:%M')}], is_dark [{is_dark}]")
+        return is_dark
+    
