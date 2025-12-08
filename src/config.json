@@ -1,0 +1,6 @@
+{
+    "logger": {
+        "directory": "logs",
+        "level": "DEBUG"
+    }
+}
