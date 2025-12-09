@@ -9,17 +9,19 @@ logger = logging.getLogger('ring_automation')
 MAX_EVENTS = 20
 
 class RingEventHandler:
-    def __init__(self, ring: Ring, lightcontroller: LightController):
+    # lightcontrollers dict is keyed on the 'doorbot_id' (the device's numeric id)
+    # we can get the device name string (for logging) from the LightController
+    def __init__(self, ring: Ring, lightcontrollers: dict[str, LightController]):
         logger.info("ringeventhandler::__init__")
         self.ring = ring
-        self.lightcontroller = lightcontroller
+        self.lightcontrollers = lightcontrollers
         self.processed_events = set()
         # TODO make configurable. 30s default
         self.light_duration = 30
 
-    def handle_existing_id(self, event: RingEvent) -> None:
-        logger.info(f"ringeventhandler::handle_existing_id: [{event.id}]")
-        asyncio.run_coroutine_threadsafe(self.lightcontroller.set_lights(True, self.light_duration), asyncio.get_event_loop())
+    def handle_event_id(self, event: RingEvent, new_event: bool) -> None:
+        logger.debug(f"ringeventhandler::handle_event_id: [{event.id}] new_event [{new_event}]")
+        asyncio.run_coroutine_threadsafe(self.lightcontrollers[event.doorbot_id].set_lights(True, self.light_duration), asyncio.get_event_loop())
 
     def evict_event_id(self, id) -> None:
         if id in self.processed_events:
@@ -33,17 +35,16 @@ class RingEventHandler:
         # doorbot_id=707916814, device_name='Drive', device_kind='cocoa_floodlight', 
         # now=1765218296.0, expires_in=180, kind='motion', state='vehicle', is_update=False)
         try:
-            device_name = event.device_name
-            
-            if self.lightcontroller.device_name != device_name:
-                logger.info(f"ringeventhandler::on_event: ignoring event for device_name [{device_name}]")
-                return None
+            event_doorbot_id = event.doorbot_id
+            if event_doorbot_id not in self.lightcontrollers:
+               logger.info(f"ringeventhandler::on_event: ignoring event for device_name [{event.device_name}]")
+               return None
             
             event_id = event.id
             event_kind = event.kind
             event_state = event.state
 
-            logger.info(f"ringeventhandler::on_event: device_name [{device_name}] kind [{event_kind}] state [{event_state}] id: {event_id}")
+            logger.info(f"ringeventhandler::on_event: device_name [{event.device_name}] kind [{event_kind}] state [{event_state}] event_id: {event_id}")
 
             # handle only motion events since we're using this as a proxy for the PIR
             # logic should be:
@@ -52,15 +53,15 @@ class RingEventHandler:
             # then set timer to evict processed events from cache using the 'expires_in' value
             if event_kind == RingEventKind.MOTION.value:
                 if event_id in self.processed_events:
-                    logger.info(f"ringeventhandler::on_event: Update to existing [{event_state}] motion detected on [{device_name}]")
+                    logger.info(f"ringeventhandler::on_event: Update to existing [{event_state}] motion detected on [{event.device_name}]")
                     # extend lights
-                    self.handle_existing_id(event)
+                    self.handle_event_id(event, False)
                     if len(self.processed_events > MAX_EVENTS):
                         self.evict_event_id(event.id)
                 else:
-                    logger.info(f"ringeventhandler::on_event: New [{event_state}] motion detected on [{device_name}]")
+                    logger.info(f"ringeventhandler::on_event: New [{event_state}] motion detected on [{event.device_name}]")
                     self.processed_events.add(event_id)
-                    self.handle_existing_id(event)
+                    self.handle_event_id(event, True)
             # other event types blah, probably won't trigger on the floodlight actually
             else:
                 logger.info(f"ringeventhandler::on_event: Other event: [{event_kind}]")

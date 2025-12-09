@@ -3,5 +3,6 @@
         "directory": "logs",
         "level": "DEBUG"
     },
-    "timezone": "Europe/London"
+    "timezone": "Europe/London",
+    "lights": ["Drive", "Patio", "Tennis Court", "Pool"]
 }

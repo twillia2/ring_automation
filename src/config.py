@@ -33,5 +33,8 @@ class Config:
     def get_timezone(self) -> str:
         return self._config.get('timezone')
     
-
+    @property
+    def get_light_devices(self) -> list[str]:
+        return self._config.get('lights')
+    
 config = Config()

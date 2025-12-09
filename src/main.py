@@ -105,7 +105,7 @@ async def _get_ring(username, password, do_update_data, user_agent=USER_AGENT):
     return ring
 ####
 
-async def listen(ring) -> None:
+async def listen(ring: Ring) -> None:
     credentials = None
 
     if gcm_cache_file.is_file():
@@ -124,7 +124,24 @@ async def listen(ring) -> None:
     log.info(f"main::listen: Setting up RingEventListener with credentials [{gcm_cache_file}]...")
 
     event_listener = RingEventListener(ring, credentials, credentials_updated_callback)
-    event_handler = RingEventHandler(ring, LightController(ring, "Drive", config.get_timezone))
+
+    lc_dict = dict()
+    timezone = config.get_timezone
+    for device_name in config.get_light_devices:
+        ring_device = ring.get_device_by_name(device_name)
+
+        if not ring_device:
+            log.error(f"main::listen: configured light device [{device_name}] not found at Ring, skipping")
+            continue
+        else:
+            # ring_device.id is the id we get on the RingEvents as 'doorbot_id', confusingly
+            lc_dict[ring_device.id] = LightController(ring, device_name, timezone)
+    
+    if len(lc_dict) < 1:
+        log.error(f"main::listen: could not instantiate any LightControllers. Exiting...")
+        return None
+
+    event_handler = RingEventHandler(ring, lc_dict)
     
     log.info("main::listen: Starting event_listener...")
     await event_listener.start()
