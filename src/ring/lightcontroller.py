@@ -70,8 +70,10 @@ class LightController:
             self._turn_off_task = asyncio.create_task(self._auto_off(duration))
 
         # finally make sure we have the latest status. doing it at the entry of this function means we have ~400ms
-        # between triggering the event and changing the status. this could be faster
-        await self.ring.async_update_devices()
+        # between triggering the event and changing the status. this could be faster.
+        # removed this call for now, don't want to spam Ring with GET requests, and we do it on line 60 above, which
+        # SHOULD be enough
+        # await self.ring.async_update_devices()
 
     async def _auto_off(self, duration: int) -> None:
         try:

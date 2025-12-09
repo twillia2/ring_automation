@@ -1,5 +1,5 @@
 import logging
-from util.logger import setup_logger
+from util.async_logger import setup_logger
 # intercept any other logging stuff
 log = setup_logger('ring_automation', level=logging.DEBUG)
 logging.getLogger('ring_doorbell.listen.eventlistener').setLevel(logging.DEBUG)

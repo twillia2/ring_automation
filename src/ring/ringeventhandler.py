@@ -1,5 +1,5 @@
 import asyncio
-
+import time
 from util.logger import logging
 from ring_doorbell import Ring, RingEvent, RingEventKind
 from ring.lightcontroller import LightController
@@ -30,6 +30,17 @@ class RingEventHandler:
 
     def on_event(self, event: RingEvent) -> None:
         logger.debug(f"ringeventhandler::on_event: [{event}]")
+
+        # sometimes the Ring API seems to send us a flood of old events when we first sign in
+        # let's ignore stuff older than 10s ago
+        current_time = time.time()
+        event_time = event.now
+        age_seconds = current_time - event_time
+        
+        if age_seconds > 10:
+            logger.debug(f"ringeventhandler::on_event: ignoring old event. age [{age_seconds:.1f}]s")
+            return
+
         #callback function that gets called when Ring events occur.
         # RingEventHandler::on_event: RingEvent(id=7581554843738829838, 
         # doorbot_id=707916814, device_name='Drive', device_kind='cocoa_floodlight', 
