@@ -58,7 +58,7 @@ class RingEventHandler:
                     if len(self.processed_events > MAX_EVENTS):
                         self.evict_event_id(event.id)
                 else:
-                    logger.info(f"ringeventhandler::on_event: New [{event_state}] motion detected on [{device_name}]. Turning on lights for [{self.light_duration}]s")
+                    logger.info(f"ringeventhandler::on_event: New [{event_state}] motion detected on [{device_name}]")
                     self.processed_events.add(event_id)
                     self.handle_existing_id(event)
             # other event types blah, probably won't trigger on the floodlight actually
