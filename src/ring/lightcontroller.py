@@ -43,8 +43,6 @@ class LightController:
             logger.debug(f"lightcontroller::set_lights: not dark, ignoring lights on request")
             return None
         
-        # make sure we have the latest status
-        await self.ring.async_update_devices()
         if enable and (self._turn_off_task and not self._turn_off_task.done()):
             logger.debug(f"lightcontroller::set_lights: cancelling existing _turn_off_task and creating a new one")
             self._turn_off_task.cancel()
@@ -70,6 +68,10 @@ class LightController:
 
         if enable:
             self._turn_off_task = asyncio.create_task(self._auto_off(duration))
+
+        # finally make sure we have the latest status. doing it at the entry of this function means we have ~400ms
+        # between triggering the event and changing the status. this could be faster
+        await self.ring.async_update_devices()
 
     async def _auto_off(self, duration: int) -> None:
         try:

@@ -119,6 +119,7 @@ async def listen(ring: Ring) -> None:
     log.info(f"main::listen: Credentials file exists now: [{gcm_cache_file.is_file()}]")
     log.info("main::listen: ring.async_update_data()...")
     # need to call this here or our LightController's devices are empty
+    await ring.async_update_devices()
     await ring.async_update_data()
 
     log.info(f"main::listen: Setting up RingEventListener with credentials [{gcm_cache_file}]...")
