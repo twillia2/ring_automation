@@ -10,6 +10,8 @@ import pytz
 
 class LightController:
     def __init__(self, ring: Ring, device_name, timezone: str):
+        self._lock = asyncio.Lock()
+
         self._turn_off_task = None
         self.ring = ring
         self.device_name = device_name
@@ -35,45 +37,50 @@ class LightController:
         logger.info(f"lightcontroller::init: is_dark [{self.is_dark()}]")
 
     async def set_lights(self, enable: bool, duration: int) -> None:
-        # i suppose we might hit a situation where we receive enable=False but we've
-        # ticked over between 'dark' and 'light' between the ring API trigger and getting here
-        # so should probably handle that by checking the value of enable here too. i.e. it's always
-        # ok to turn the lights _off_ if it's light outside
-        if not self.is_dark() and enable:
-            logger.debug(f"lightcontroller::set_lights: not dark, ignoring lights on request")
-            return None
-        
-        if enable and (self._turn_off_task and not self._turn_off_task.done()):
-            logger.debug(f"lightcontroller::set_lights: cancelling existing _turn_off_task and creating a new one")
-            self._turn_off_task.cancel()
-            self._turn_off_task = None
-            self._turn_off_task = asyncio.create_task(self._auto_off(duration))
-            return None
+        # there's a (rare) race condition if we try to re-enable while sleeping
+        # following a 'turn off' request... i.e. if there's some new motion 30s 
+        # (or 'duration') after the motion that turned the lights on
+        async with self._lock: 
+        ###
+            # i suppose we might hit a situation where we receive enable=False but we've
+            # ticked over between 'dark' and 'light' between the ring API trigger and getting here
+            # so should probably handle that by checking the value of enable here too. i.e. it's always
+            # ok to turn the lights _off_ if it's light outside
+            if not self.is_dark() and enable:
+                logger.debug(f"lightcontroller::set_lights: not dark, ignoring lights on request")
+                return None
+            
+            if enable and (self._turn_off_task and not self._turn_off_task.done()):
+                logger.debug(f"lightcontroller::set_lights: cancelling existing _turn_off_task and creating a new one")
+                self._turn_off_task.cancel()
+                self._turn_off_task = None
+                self._turn_off_task = asyncio.create_task(self._auto_off(duration))
+                return None
 
-        if (enable and self.is_on) or (not enable and not self.is_on):
-            logger.warning(f"lightcontroller::set_lights: {self.floodlight.name} light is already {self.is_on}")
-            return None
+            if (enable and self.is_on) or (not enable and not self.is_on):
+                logger.warning(f"lightcontroller::set_lights: {self.floodlight.name} light is already {self.is_on}")
+                return None
 
-        await self.floodlight.async_set_light(enable)
-        # this is a bit of a hack but it seems we need to wait for the light status to resync
-        await asyncio.sleep(3)
-        await self.ring.async_update_devices()
-        self.is_on = self.floodlight.light
+            await self.floodlight.async_set_light(enable)
+            # this is a bit of a hack but it seems we need to wait for the light status to resync
+            await asyncio.sleep(3)
+            await self.ring.async_update_devices()
+            self.is_on = self.floodlight.light
 
-        logger.info(f"lightcontroller::set_lights: {self.floodlight.name} light: requested [{enable}] current state [{self.floodlight.light}]")
-        if not enable and self.floodlight.light:
-            # probably a lag turning it off, schedule another attempt/check in 10s
-            logger.warning(f"lightcontroller::set_lights: inconsistent state after disabler request self.is_on = [{self.is_on}] self.floodlight.light = [{self.floodlight.light}] scheduling another off task")
-            self._turn_off_task = asyncio.create_task(self._auto_off(10))
+            logger.info(f"lightcontroller::set_lights: {self.floodlight.name} light: requested [{enable}] current state [{self.floodlight.light}]")
+            if not enable and self.floodlight.light:
+                # probably a lag turning it off, schedule another attempt/check in 10s
+                logger.warning(f"lightcontroller::set_lights: inconsistent state after disabler request self.is_on = [{self.is_on}] self.floodlight.light = [{self.floodlight.light}] scheduling another off task")
+                self._turn_off_task = asyncio.create_task(self._auto_off(10))
 
-        if enable:
-            self._turn_off_task = asyncio.create_task(self._auto_off(duration))
+            if enable:
+                self._turn_off_task = asyncio.create_task(self._auto_off(duration))
 
-        # finally make sure we have the latest status. doing it at the entry of this function means we have ~400ms
-        # between triggering the event and changing the status. this could be faster.
-        # removed this call for now, don't want to spam Ring with GET requests, and we do it on line 60 above, which
-        # SHOULD be enough
-        # await self.ring.async_update_devices()
+            # finally make sure we have the latest status. doing it at the entry of this function means we have ~400ms
+            # between triggering the event and changing the status. this could be faster.
+            # removed this call for now, don't want to spam Ring with GET requests, and we do it on line 60 above, which
+            # SHOULD be enough
+            # await self.ring.async_update_devices()
 
     async def _auto_off(self, duration: int) -> None:
         try:
