@@ -10,8 +10,6 @@ import pytz
 
 class LightController:
     def __init__(self, ring: Ring, device_name, timezone: str):
-        self._lock = asyncio.Lock()
-
         self._turn_off_task = None
         self.ring = ring
         self.device_name = device_name
@@ -29,58 +27,56 @@ class LightController:
             logger.error(f"lightcontroller::init: device [{device_name}] does not have a light...")
             return None
         self.floodlight = cast(RingStickUpCam, self.device)
-        self.is_on = self.floodlight.light
+        self._is_on = self.floodlight.light
+        self._setting_light = False
 
         # lat/lon for sunset/sunrise times
         self.location = LocationInfo(latitude=self.device.latitude, longitude=self.device.longitude)
 
         logger.info(f"lightcontroller::init: is_dark [{self.is_dark()}]")
 
-    async def set_lights(self, enable: bool, duration: int) -> None:
-        # there's a (rare) race condition if we try to re-enable while sleeping
-        # following a 'turn off' request... i.e. if there's some new motion 30s 
-        # (or 'duration') after the motion that turned the lights on
-        async with self._lock: 
-        ###
-            # i suppose we might hit a situation where we receive enable=False but we've
-            # ticked over between 'dark' and 'light' between the ring API trigger and getting here
-            # so should probably handle that by checking the value of enable here too. i.e. it's always
-            # ok to turn the lights _off_ if it's light outside
-            if not self.is_dark() and enable:
-                logger.debug(f"lightcontroller::set_lights: not dark, ignoring lights on request")
-                return None
-            
-            if enable and (self._turn_off_task and not self._turn_off_task.done()):
-                logger.debug(f"lightcontroller::set_lights: cancelling existing _turn_off_task and creating a new one")
-                self._turn_off_task.cancel()
-                self._turn_off_task = None
-                self._turn_off_task = asyncio.create_task(self._auto_off(duration))
-                return None
+async def set_lights(self, enable: bool, duration: int) -> None:
+    # i suppose we might hit a situation where we receive enable=False but we've
+    # ticked over between 'dark' and 'light' between the ring API trigger and getting here
+    # so should probably handle that by checking the value of enable here too. i.e. it's always
+    # ok to turn the lights _off_ if it's light outside
+    if not self.is_dark() and enable:
+        logger.debug(f"lightcontroller::set_lights: not dark, ignoring lights on request")
+        return None
+    
+    if enable and (self._turn_off_task and not self._turn_off_task.done()):
+        logger.debug(f"lightcontroller::set_lights: cancelling existing _turn_off_task and creating a new one")
+        self._turn_off_task.cancel()
+        self._turn_off_task = None
+        self._turn_off_task = asyncio.create_task(self._auto_off(duration))
+        return None
 
-            if (enable and self.is_on) or (not enable and not self.is_on):
-                logger.warning(f"lightcontroller::set_lights: {self.floodlight.name} light is already {self.is_on}")
-                return None
+    if self._setting_light:
+        logger.debug(f"lightcontroller::set_lights: _setting_light [{self._setting_light}] API call in progress, skipping")
+        return None
 
-            await self.floodlight.async_set_light(enable)
-            # this is a bit of a hack but it seems we need to wait for the light status to resync
-            await asyncio.sleep(3)
-            await self.ring.async_update_devices()
-            self.is_on = self.floodlight.light
+    if (enable and self._is_on) or (not enable and not self._is_on):
+        logger.warning(f"lightcontroller::set_lights: {self.floodlight.name} light is already {self._is_on}")
+        return None
 
-            logger.info(f"lightcontroller::set_lights: {self.floodlight.name} light: requested [{enable}] current state [{self.floodlight.light}]")
-            if not enable and self.floodlight.light:
-                # probably a lag turning it off, schedule another attempt/check in 10s
-                logger.warning(f"lightcontroller::set_lights: inconsistent state after disabler request self.is_on = [{self.is_on}] self.floodlight.light = [{self.floodlight.light}] scheduling another off task")
-                self._turn_off_task = asyncio.create_task(self._auto_off(10))
+    self._setting_light = True
+    try:
+        await self.floodlight.async_set_light(enable)
+        # this is a bit of a hack but it seems we need to wait for the light status to resync
+        await asyncio.sleep(3)
+        await self.ring.async_update_devices()
+        self._is_on = self.floodlight.light
 
-            if enable:
-                self._turn_off_task = asyncio.create_task(self._auto_off(duration))
+        logger.info(f"lightcontroller::set_lights: {self.floodlight.name} light: requested [{enable}] current state [{self.floodlight.light}]")
+        if not enable and self.floodlight.light:
+            # probably a lag turning it off, schedule another attempt/check in 10s
+            logger.warning(f"lightcontroller::set_lights: inconsistent state after disabler request self.is_on = [{self._is_on}] self.floodlight.light = [{self.floodlight.light}] scheduling another off task")
+            self._turn_off_task = asyncio.create_task(self._auto_off(10))
 
-            # finally make sure we have the latest status. doing it at the entry of this function means we have ~400ms
-            # between triggering the event and changing the status. this could be faster.
-            # removed this call for now, don't want to spam Ring with GET requests, and we do it on line 60 above, which
-            # SHOULD be enough
-            # await self.ring.async_update_devices()
+        if enable:
+            self._turn_off_task = asyncio.create_task(self._auto_off(duration))
+    finally:
+        self._setting_light = False
 
     async def _auto_off(self, duration: int) -> None:
         try:
