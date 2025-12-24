@@ -17,7 +17,7 @@ class RingEventHandler:
         self.lightcontrollers = lightcontrollers
         self.processed_events = set()
         # TODO make configurable. 30s default
-        self.light_duration = 30
+        self.light_duration = 60
 
     def handle_event_id(self, event: RingEvent, new_event: bool) -> None:
         logger.debug(f"ringeventhandler::handle_event_id: [{event.id}] new_event [{new_event}]")
