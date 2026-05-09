@@ -152,7 +152,7 @@ async def listen(ring: Ring) -> None:
         if log.getEffectiveLevel() >= logging.DEBUG:
             log_debug_info(event_listener)
         print("main::listen: event_listener.started = True, listening...")
-        await asyncio.get_event_loop().run_in_executor(None, input)
+        await asyncio.Event().wait()
 
     else:
         log.error("main::listen: Failed to start event_listener")
